@@ -1,0 +1,38 @@
+[project]
+name = "sec-agent"
+version = "0.1.0"
+description = "A security analysis agent built with Pydantic AI"
+readme = "README.md"
+authors = [
+    { name = "Okan", email = "huseyinokand@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic-ai-slim[anthropic]>=2.33.0",
+    "pydantic-settings>=2.15.0",
+]
+
+[project.scripts]
+sec-agent = "sec_agent.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
