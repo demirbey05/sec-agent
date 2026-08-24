@@ -1,0 +1,148 @@
+{
+    "settings": {
+        "number_of_shards": 1,
+        "number_of_replicas": 0,
+        "index.mapping.total_fields.limit": 200
+    },
+    "mappings": {
+        "dynamic": "strict",
+        "properties": {
+            "@timestamp": {
+                "type": "date"
+            },
+            "message": {
+                "type": "text"
+            },
+            "event": {
+                "properties": {
+                    "id": {
+                        "type": "keyword"
+                    },
+                    "category": {
+                        "type": "keyword"
+                    },
+                    "action": {
+                        "type": "keyword"
+                    },
+                    "outcome": {
+                        "type": "keyword"
+                    },
+                    "reason": {
+                        "type": "keyword"
+                    },
+                    "dataset": {
+                        "type": "keyword"
+                    }
+                }
+            },
+            "user": {
+                "properties": {
+                    "name": {
+                        "type": "keyword"
+                    },
+                    "id": {
+                        "type": "keyword"
+                    },
+                    "roles": {
+                        "type": "keyword"
+                    }
+                }
+            },
+            "source": {
+                "properties": {
+                    "ip": {
+                        "type": "ip"
+                    },
+                    "port": {
+                        "type": "long"
+                    },
+                    "geo": {
+                        "properties": {
+                            "country_iso_code": {
+                                "type": "keyword"
+                            },
+                            "city_name": {
+                                "type": "keyword"
+                            }
+                        }
+                    },
+                    "as": {
+                        "properties": {
+                            "organization": {
+                                "properties": {
+                                    "name": {
+                                        "type": "keyword"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "host": {
+                "properties": {
+                    "name": {
+                        "type": "keyword"
+                    },
+                    "hostname": {
+                        "type": "keyword"
+                    }
+                }
+            },
+            "service": {
+                "properties": {
+                    "name": {
+                        "type": "keyword"
+                    }
+                }
+            },
+            "network": {
+                "properties": {
+                    "protocol": {
+                        "type": "keyword"
+                    }
+                }
+            },
+            "auth": {
+                "properties": {
+                    "method": {
+                        "type": "keyword"
+                    },
+                    "mfa_used": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "user_agent": {
+                "properties": {
+                    "original": {
+                        "type": "text",
+                        "fields": {
+                            "keyword": {
+                                "type": "keyword",
+                                "ignore_above": 512
+                            }
+                        }
+                    },
+                    "name": {
+                        "type": "keyword"
+                    },
+                    "os": {
+                        "properties": {
+                            "name": {
+                                "type": "keyword"
+                            }
+                        }
+                    }
+                }
+            },
+            "labels": {
+                "properties": {
+                    "scenario": {
+                        "type": "keyword"
+                    }
+                }
+            }
+        }
+    }
+}

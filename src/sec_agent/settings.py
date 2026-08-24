@@ -31,6 +31,9 @@ class Settings(BaseSettings):
 
     max_tokens: int = 16_000
 
+    es_url: str = "http://localhost:9200"
+    """Base URL of the Elasticsearch cluster the triage tools query."""
+
     retries: int = 2
 
 
