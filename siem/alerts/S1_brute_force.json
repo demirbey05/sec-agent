@@ -1,0 +1,224 @@
+{
+  "schema_version": "1.0",
+  "alert_id": "s1-brute-force",
+  "dedup_key": "auth-0001:mehmet.kaya:2026-08-23T02:14:00Z",
+  "created_at": "2026-08-23T02:19:00Z",
+  "producer": "kibana-rule",
+  "title": "mehmet.kaya: burst of failed logins from 185.220.101.44",
+  "description": "A single source address failed to authenticate against one account far more often than the rule's threshold allows within five minutes.",
+  "severity": "high",
+  "confidence": 0.6,
+  "risk_score": 73,
+  "data_source": {
+    "index": "auth-logs",
+    "timestamp_field": "@timestamp",
+    "ecs_version": "8.11"
+  },
+  "window": {
+    "start": "2026-08-23T02:14:00Z",
+    "end": "2026-08-23T02:17:00Z",
+    "baseline_days": 7
+  },
+  "entities": {
+    "users": [
+      "mehmet.kaya"
+    ],
+    "source_ips": [
+      "185.220.101.44"
+    ]
+  },
+  "detection": {
+    "rule_id": "auth-0001",
+    "rule_name": "Repeated authentication failures against a single account",
+    "rule_type": "threshold",
+    "query": "event.outcome:\"failure\" and user.name:\"mehmet.kaya\" and source.ip:\"185.220.101.44\"",
+    "query_language": "kql",
+    "signals": {
+      "failed_login_count": 213
+    },
+    "threshold": {
+      "failed_login_count": 25,
+      "window": "5m"
+    },
+    "mitre": [
+      "T1110.001"
+    ]
+  },
+  "evidence": {
+    "index": "auth-logs",
+    "doc_ids": [
+      "TAXSOKAB0Pz4G6lOKENC",
+      "TQXSOKAB0Pz4G6lOKENC",
+      "TgXSOKAB0Pz4G6lOKENC",
+      "TwXSOKAB0Pz4G6lOKENC",
+      "UAXSOKAB0Pz4G6lOKENC"
+    ],
+    "sample": [
+      {
+        "@timestamp": "2026-08-23T02:14:00.000Z",
+        "message": "login_failed for user mehmet.kaya from 185.220.101.44 via vpn",
+        "event": {
+          "id": "19b21ea0-4249-1230-fcbd-7cbf5a8d365c",
+          "category": "authentication",
+          "action": "login_failed",
+          "outcome": "failure",
+          "dataset": "auth.login",
+          "reason": "invalid_password"
+        },
+        "user": {
+          "name": "mehmet.kaya",
+          "id": "uid-48653",
+          "roles": [
+            "employee"
+          ]
+        },
+        "source": {
+          "ip": "185.220.101.44",
+          "port": 19953,
+          "geo": {
+            "country_iso_code": "NL",
+            "city_name": "Amsterdam"
+          },
+          "as": {
+            "organization": {
+              "name": "Hostkey B.V."
+            }
+          }
+        },
+        "host": {
+          "name": "vpn-gw-01",
+          "hostname": "vpn-gw-01"
+        },
+        "service": {
+          "name": "vpn"
+        },
+        "network": {
+          "protocol": "https"
+        },
+        "auth": {
+          "method": "password",
+          "mfa_used": false
+        },
+        "user_agent": {
+          "original": "python-requests/2.32.3",
+          "name": "python-requests",
+          "os": {
+            "name": "Linux"
+          }
+        }
+      },
+      {
+        "@timestamp": "2026-08-23T02:14:00.850Z",
+        "message": "login_failed for user mehmet.kaya from 185.220.101.44 via vpn",
+        "event": {
+          "id": "7a644ba2-e6db-8a72-d4b1-a9fe256db42f",
+          "category": "authentication",
+          "action": "login_failed",
+          "outcome": "failure",
+          "dataset": "auth.login",
+          "reason": "invalid_password"
+        },
+        "user": {
+          "name": "mehmet.kaya",
+          "id": "uid-48653",
+          "roles": [
+            "employee"
+          ]
+        },
+        "source": {
+          "ip": "185.220.101.44",
+          "port": 34716,
+          "geo": {
+            "country_iso_code": "NL",
+            "city_name": "Amsterdam"
+          },
+          "as": {
+            "organization": {
+              "name": "Hostkey B.V."
+            }
+          }
+        },
+        "host": {
+          "name": "vpn-gw-01",
+          "hostname": "vpn-gw-01"
+        },
+        "service": {
+          "name": "vpn"
+        },
+        "network": {
+          "protocol": "https"
+        },
+        "auth": {
+          "method": "password",
+          "mfa_used": false
+        },
+        "user_agent": {
+          "original": "python-requests/2.32.3",
+          "name": "python-requests",
+          "os": {
+            "name": "Linux"
+          }
+        }
+      },
+      {
+        "@timestamp": "2026-08-23T02:14:01.700Z",
+        "message": "login_failed for user mehmet.kaya from 185.220.101.44 via vpn",
+        "event": {
+          "id": "ef89f65f-c260-15e7-3524-ee16b14c9986",
+          "category": "authentication",
+          "action": "login_failed",
+          "outcome": "failure",
+          "dataset": "auth.login",
+          "reason": "invalid_password"
+        },
+        "user": {
+          "name": "mehmet.kaya",
+          "id": "uid-48653",
+          "roles": [
+            "employee"
+          ]
+        },
+        "source": {
+          "ip": "185.220.101.44",
+          "port": 61729,
+          "geo": {
+            "country_iso_code": "NL",
+            "city_name": "Amsterdam"
+          },
+          "as": {
+            "organization": {
+              "name": "Hostkey B.V."
+            }
+          }
+        },
+        "host": {
+          "name": "vpn-gw-01",
+          "hostname": "vpn-gw-01"
+        },
+        "service": {
+          "name": "vpn"
+        },
+        "network": {
+          "protocol": "https"
+        },
+        "auth": {
+          "method": "password",
+          "mfa_used": false
+        },
+        "user_agent": {
+          "original": "python-requests/2.32.3",
+          "name": "python-requests",
+          "os": {
+            "name": "Linux"
+          }
+        }
+      }
+    ],
+    "total_matched": 213
+  },
+  "context": {
+    "notes": "Account belongs to the sales team; no ticket references it."
+  },
+  "related_alert_ids": [],
+  "raw": {}
+}

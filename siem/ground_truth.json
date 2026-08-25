@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-23T11:40:02.000Z",
+  "generated_at": "2026-08-25T12:08:11.000Z",
   "index": "auth-logs",
   "seed": 1337,
   "scenarios": [
@@ -10,8 +10,8 @@
       "user": "mehmet.kaya",
       "failed_count": 214,
       "succeeded": true,
-      "window_start": "2026-08-21T02:14:00.000Z",
-      "window_end": "2026-08-21T02:17:04.900Z"
+      "window_start": "2026-08-23T02:14:00.000Z",
+      "window_end": "2026-08-23T02:17:04.900Z"
     },
     {
       "id": "S2_password_spray",
@@ -19,8 +19,8 @@
       "source_ip": "91.219.236.17",
       "distinct_users": 40,
       "succeeded": false,
-      "window_start": "2026-08-21T23:05:00.000Z",
-      "window_end": "2026-08-21T23:43:14.000Z"
+      "window_start": "2026-08-24T00:05:00.000Z",
+      "window_end": "2026-08-24T00:38:11.000Z"
     },
     {
       "id": "S3_impossible_travel",
@@ -35,32 +35,32 @@
         "BR"
       ],
       "gap_minutes": 11,
-      "window_start": "2026-08-22T17:03:00.000Z",
-      "window_end": "2026-08-22T17:14:00.000Z"
+      "window_start": "2026-08-24T18:03:00.000Z",
+      "window_end": "2026-08-24T18:14:00.000Z"
     },
     {
       "id": "S4_offhours_admin",
       "description": "Privileged account logs in at 03:12 UTC, far outside its normal pattern, without MFA.",
       "user": "kadmin",
       "source_ip": "10.10.40.55",
-      "window_start": "2026-08-22T03:12:00.000Z",
-      "window_end": "2026-08-22T03:59:00.000Z"
+      "window_start": "2026-08-24T03:12:00.000Z",
+      "window_end": "2026-08-24T03:59:00.000Z"
     },
     {
       "id": "S5_dormant_account",
       "description": "Account with no other activity in the retention window suddenly logs in from abroad.",
       "user": "eski.calisan",
       "source_ip": "94.103.87.12",
-      "window_start": "2026-08-23T07:40:02.000Z",
-      "window_end": "2026-08-23T07:40:02.000Z"
+      "window_start": "2026-08-25T08:08:11.000Z",
+      "window_end": "2026-08-25T08:08:11.000Z"
     },
     {
       "id": "S6_service_account_misuse",
       "description": "Automation account authenticates with a password from a browser on an unusual host, instead of its normal ssh_key on bastion-01.",
       "user": "svc-backup",
       "source_ip": "10.10.99.201",
-      "window_start": "2026-08-23T02:41:00.000Z",
-      "window_end": "2026-08-23T02:50:00.000Z"
+      "window_start": "2026-08-25T03:41:00.000Z",
+      "window_end": "2026-08-25T03:50:00.000Z"
     }
   ]
 }

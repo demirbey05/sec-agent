@@ -1,0 +1,112 @@
+{
+  "schema_version": "1.0",
+  "alert_id": "s5-dormant-account",
+  "dedup_key": "auth-0005:eski.calisan:2026-08-25T08:03:11Z",
+  "created_at": "2026-08-25T08:15:11Z",
+  "producer": "kibana-rule",
+  "title": "First activity in the retention window for eski.calisan",
+  "description": "An account that has not appeared in the authentication logs at all authenticated successfully from outside the corporate ranges.",
+  "severity": "medium",
+  "confidence": 0.5,
+  "risk_score": 58,
+  "data_source": {
+    "index": "auth-logs",
+    "timestamp_field": "@timestamp",
+    "ecs_version": "8.11"
+  },
+  "window": {
+    "start": "2026-08-25T08:03:11Z",
+    "end": "2026-08-25T08:13:11Z",
+    "baseline_days": 7
+  },
+  "entities": {
+    "users": [
+      "eski.calisan"
+    ],
+    "source_ips": [
+      "94.103.87.12"
+    ]
+  },
+  "detection": {
+    "rule_id": "auth-0005",
+    "rule_name": "Account with no recent history authenticates successfully",
+    "rule_type": "new_terms",
+    "query": "event.outcome:\"success\" and user.name:\"eski.calisan\"",
+    "query_language": "kql",
+    "signals": {
+      "event_count": 1
+    },
+    "threshold": {
+      "prior_events_in_baseline": 0
+    },
+    "mitre": [
+      "T1078.002"
+    ]
+  },
+  "evidence": {
+    "index": "auth-logs",
+    "doc_ids": [
+      "lgXSOKAB0Pz4G6lOKEaq"
+    ],
+    "sample": [
+      {
+        "@timestamp": "2026-08-25T08:08:11.000Z",
+        "message": "login_success for user eski.calisan from 94.103.87.12 via vpn",
+        "event": {
+          "id": "872b799f-e08e-ee98-d84d-520ce33913e7",
+          "category": "authentication",
+          "action": "login_success",
+          "outcome": "success",
+          "dataset": "auth.login"
+        },
+        "user": {
+          "name": "eski.calisan",
+          "id": "uid-60529",
+          "roles": [
+            "employee"
+          ]
+        },
+        "source": {
+          "ip": "94.103.87.12",
+          "port": 14771,
+          "geo": {
+            "country_iso_code": "RU",
+            "city_name": "Saint Petersburg"
+          },
+          "as": {
+            "organization": {
+              "name": "Petersburg Internet Network"
+            }
+          }
+        },
+        "host": {
+          "name": "vpn-gw-02",
+          "hostname": "vpn-gw-02"
+        },
+        "service": {
+          "name": "vpn"
+        },
+        "network": {
+          "protocol": "https"
+        },
+        "auth": {
+          "method": "password",
+          "mfa_used": false
+        },
+        "user_agent": {
+          "original": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/125.0 Safari/537.36",
+          "name": "Chrome",
+          "os": {
+            "name": "Linux"
+          }
+        }
+      }
+    ],
+    "total_matched": 1
+  },
+  "context": {
+    "notes": "Not present in the current HR export."
+  },
+  "related_alert_ids": [],
+  "raw": {}
+}

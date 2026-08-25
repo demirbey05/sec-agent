@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0",
+  "alert_id": "s4-offhours-admin",
+  "dedup_key": "auth-0004:kadmin:2026-08-24T03:11:00Z",
+  "created_at": "2026-08-24T04:02:00Z",
+  "producer": "kibana-rule",
+  "title": "kadmin logged in at an unusual hour",
+  "description": "An administrative account authenticated in the middle of the night, an hour at which it has no recorded history.",
+  "severity": "medium",
+  "confidence": 0.4,
+  "risk_score": 55,
+  "data_source": {
+    "index": "auth-logs",
+    "timestamp_field": "@timestamp",
+    "ecs_version": "8.11"
+  },
+  "window": {
+    "start": "2026-08-24T03:11:00Z",
+    "end": "2026-08-24T04:00:00Z",
+    "baseline_days": 7
+  },
+  "entities": {
+    "users": [
+      "kadmin"
+    ],
+    "source_ips": [
+      "10.10.40.55"
+    ]
+  },
+  "detection": {
+    "rule_id": "auth-0004",
+    "rule_name": "Privileged account active outside business hours",
+    "rule_type": "new_terms",
+    "query": "event.outcome:\"success\" and user.name:\"kadmin\"",
+    "query_language": "kql",
+    "signals": {
+      "successful_login_count": 2
+    },
+    "threshold": {
+      "business_hours_utc": "06:00-18:00"
+    },
+    "mitre": [
+      "T1078.003"
+    ]
+  },
+  "evidence": {
+    "index": "auth-logs",
+    "doc_ids": [
+      "6gXSOKAB0Pz4G6lOKESo",
+      "9AXSOKAB0Pz4G6lOKESo"
+    ],
+    "sample": [
+      {
+        "@timestamp": "2026-08-24T03:12:00.000Z",
+        "message": "login_success for user kadmin from 10.10.40.55 via sshd",
+        "event": {
+          "id": "16c1901c-c2a0-7d9e-6aa8-7ade760f2e97",
+          "category": "authentication",
+          "action": "login_success",
+          "outcome": "success",
+          "dataset": "auth.login"
+        },
+        "user": {
+          "name": "kadmin",
+          "id": "uid-12644",
+          "roles": [
+            "admin"
+          ]
+        },
+        "source": {
+          "ip": "10.10.40.55",
+          "port": 7425,
+          "geo": {
+            "country_iso_code": "TR",
+            "city_name": "Ankara"
+          },
+          "as": {
+            "organization": {
+              "name": "Internal"
+            }
+          }
+        },
+        "host": {
+          "name": "bastion-01",
+          "hostname": "bastion-01"
+        },
+        "service": {
+          "name": "sshd"
+        },
+        "network": {
+          "protocol": "ssh"
+        },
+        "auth": {
+          "method": "password",
+          "mfa_used": false
+        },
+        "user_agent": {
+          "original": "OpenSSH_9.6p1",
+          "name": "OpenSSH",
+          "os": {
+            "name": "Linux"
+          }
+        }
+      },
+      {
+        "@timestamp": "2026-08-24T03:59:00.000Z",
+        "message": "logout for user kadmin from 10.10.40.55 via sshd",
+        "event": {
+          "id": "ac53b3b3-4227-ea9b-c567-7bd695c605b2",
+          "category": "authentication",
+          "action": "logout",
+          "outcome": "success",
+          "dataset": "auth.login"
+        },
+        "user": {
+          "name": "kadmin",
+          "id": "uid-12644",
+          "roles": [
+            "admin"
+          ]
+        },
+        "source": {
+          "ip": "10.10.40.55",
+          "port": 27373,
+          "geo": {
+            "country_iso_code": "TR",
+            "city_name": "Ankara"
+          },
+          "as": {
+            "organization": {
+              "name": "Internal"
+            }
+          }
+        },
+        "host": {
+          "name": "bastion-01",
+          "hostname": "bastion-01"
+        },
+        "service": {
+          "name": "sshd"
+        },
+        "network": {
+          "protocol": "ssh"
+        },
+        "auth": {
+          "method": "password",
+          "mfa_used": true
+        },
+        "user_agent": {
+          "original": "OpenSSH_9.6p1",
+          "name": "OpenSSH",
+          "os": {
+            "name": "Linux"
+          }
+        }
+      }
+    ],
+    "total_matched": 2
+  },
+  "context": {
+    "user_is_privileged": true,
+    "asset_criticality": "high",
+    "known_corp_ranges": [
+      "10.10.0.0/16"
+    ]
+  },
+  "related_alert_ids": [],
+  "raw": {}
+}

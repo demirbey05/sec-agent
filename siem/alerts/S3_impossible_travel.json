@@ -1,0 +1,168 @@
+{
+  "schema_version": "1.0",
+  "alert_id": "s3-impossible-travel",
+  "dedup_key": "auth-0003:ayse.demir:2026-08-24T18:02:00Z",
+  "created_at": "2026-08-24T18:17:00Z",
+  "producer": "kibana-rule",
+  "title": "ayse.demir authenticated from TR and BR",
+  "description": "Two successful authentications for the same account came from different countries, closer together in time than travel between them allows.",
+  "severity": "high",
+  "confidence": 0.55,
+  "risk_score": 70,
+  "data_source": {
+    "index": "auth-logs",
+    "timestamp_field": "@timestamp",
+    "ecs_version": "8.11"
+  },
+  "window": {
+    "start": "2026-08-24T18:02:00Z",
+    "end": "2026-08-24T18:15:00Z",
+    "baseline_days": 7
+  },
+  "entities": {
+    "users": [
+      "ayse.demir"
+    ],
+    "source_ips": [
+      "88.240.12.9",
+      "177.36.44.201"
+    ]
+  },
+  "detection": {
+    "rule_id": "auth-0003",
+    "rule_name": "Successful logins from two countries in quick succession",
+    "rule_type": "correlation",
+    "query": "event.outcome:\"success\" and user.name:\"ayse.demir\"",
+    "query_language": "kql",
+    "signals": {
+      "successful_login_count": 2,
+      "distinct_source_geo_country_iso_code_count": 2
+    },
+    "threshold": {
+      "distinct_country_count": 1,
+      "window": "1h"
+    },
+    "mitre": [
+      "T1078.004"
+    ]
+  },
+  "evidence": {
+    "index": "auth-logs",
+    "doc_ids": [
+      "_wXSOKAB0Pz4G6lOKEWp",
+      "AgXSOKAB0Pz4G6lOKEap"
+    ],
+    "sample": [
+      {
+        "@timestamp": "2026-08-24T18:03:00.000Z",
+        "message": "login_success for user ayse.demir from 88.240.12.9 via okta",
+        "event": {
+          "id": "283746ba-e898-ce32-603f-8acec1378ccf",
+          "category": "authentication",
+          "action": "login_success",
+          "outcome": "success",
+          "dataset": "auth.login"
+        },
+        "user": {
+          "name": "ayse.demir",
+          "id": "uid-31810",
+          "roles": [
+            "employee"
+          ]
+        },
+        "source": {
+          "ip": "88.240.12.9",
+          "port": 7010,
+          "geo": {
+            "country_iso_code": "TR",
+            "city_name": "Istanbul"
+          },
+          "as": {
+            "organization": {
+              "name": "Turk Telekom"
+            }
+          }
+        },
+        "host": {
+          "name": "sso-idp-02",
+          "hostname": "sso-idp-02"
+        },
+        "service": {
+          "name": "okta"
+        },
+        "network": {
+          "protocol": "https"
+        },
+        "auth": {
+          "method": "password",
+          "mfa_used": true
+        },
+        "user_agent": {
+          "original": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148",
+          "name": "Safari",
+          "os": {
+            "name": "iOS"
+          }
+        }
+      },
+      {
+        "@timestamp": "2026-08-24T18:14:00.000Z",
+        "message": "login_success for user ayse.demir from 177.36.44.201 via okta",
+        "event": {
+          "id": "36a7eab0-97f6-cae2-a111-44331c623113",
+          "category": "authentication",
+          "action": "login_success",
+          "outcome": "success",
+          "dataset": "auth.login"
+        },
+        "user": {
+          "name": "ayse.demir",
+          "id": "uid-31810",
+          "roles": [
+            "employee"
+          ]
+        },
+        "source": {
+          "ip": "177.36.44.201",
+          "port": 37319,
+          "geo": {
+            "country_iso_code": "BR",
+            "city_name": "Sao Paulo"
+          },
+          "as": {
+            "organization": {
+              "name": "Claro S.A."
+            }
+          }
+        },
+        "host": {
+          "name": "sso-idp-02",
+          "hostname": "sso-idp-02"
+        },
+        "service": {
+          "name": "okta"
+        },
+        "network": {
+          "protocol": "https"
+        },
+        "auth": {
+          "method": "password",
+          "mfa_used": false
+        },
+        "user_agent": {
+          "original": "OpenSSH_9.6p1",
+          "name": "OpenSSH",
+          "os": {
+            "name": "Linux"
+          }
+        }
+      }
+    ],
+    "total_matched": 2
+  },
+  "context": {
+    "user_department": "finance"
+  },
+  "related_alert_ids": [],
+  "raw": {}
+}

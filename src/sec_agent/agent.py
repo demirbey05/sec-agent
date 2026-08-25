@@ -9,9 +9,10 @@ from typing import Any, Literal
 import requests
 from pydantic import AwareDatetime, BaseModel, Field, IPvAnyAddress, model_validator
 from pydantic_ai import Agent, ModelRetry, RunContext
-from pydantic_ai.models.anthropic import AnthropicModelSettings
+from pydantic_ai.models import Model, infer_model
+from pydantic_ai.settings import ModelSettings
 
-from .settings import settings
+from .settings import provider_of, settings
 
 Severity = Literal["info", "low", "medium", "high", "critical"]
 
@@ -278,24 +279,84 @@ How to work:
 """
 
 
+# ---------------------------------------------------------------------------
+# Model wiring
+#
+# The model is chosen by `SEC_AGENT_MODEL`, so the same agent runs against
+# Anthropic or against anything OpenRouter fronts. Only the reasoning knob
+# differs between them, and that is all these two helpers exist to hide.
+# ---------------------------------------------------------------------------
+
+# `max` has no equivalent outside Anthropic; `xhigh` is the closest thing.
+GENERIC_THINKING = {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh",
+    "max": "xhigh",
+}
+
+
+def resolve_model(name: str) -> Model:
+    """Build the model named by `provider:model`, holding its own API key.
+
+    `infer_model` would look the key up in the process environment, which misses
+    one that lives only in `.env`, so the key is passed in explicitly.
+    """
+    variable, key = settings.api_key_for(name)
+    if variable is None or key is None:
+        # Not a provider we manage a key for: let pydantic-ai sort it out.
+        return infer_model(name)
+
+    provider_name = provider_of(name)
+    _, _, model_name = name.partition(":")
+
+    if provider_name == "anthropic":
+        from pydantic_ai.models.anthropic import AnthropicModel
+        from pydantic_ai.providers.anthropic import AnthropicProvider
+
+        return AnthropicModel(model_name, provider=AnthropicProvider(api_key=key))
+
+    from pydantic_ai.models.openrouter import OpenRouterModel
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    return OpenRouterModel(model_name, provider=OpenRouterProvider(api_key=key))
+
+
+def model_settings_for(model: Model, effort: str) -> ModelSettings:
+    """Reasoning settings in whichever dialect this model speaks."""
+    if model.system == "anthropic":
+        from pydantic_ai.models.anthropic import AnthropicModelSettings
+
+        return AnthropicModelSettings(
+            max_tokens=settings.max_tokens,
+            # Adaptive thinking: the model decides how much to think.
+            anthropic_thinking={"type": "adaptive"},
+            anthropic_effort=effort,
+        )
+
+    # Everywhere else, the unified `thinking` level is translated by the
+    # provider — OpenRouter turns it into a `reasoning.effort` request.
+    return ModelSettings(
+        max_tokens=settings.max_tokens,
+        thinking=GENERIC_THINKING.get(effort, "medium"),
+    )
+
+
 def build_agent(
     *,
-    model: str | None = None,
+    model: str | Model | None = None,
     effort: str | None = None,
 ) -> Agent[TriageDeps, TriageVerdict]:
     """Build the triage agent and register its tools."""
+    resolved = model if isinstance(model, Model) else resolve_model(model or settings.model)
     agent = Agent(
-        model or settings.model,
+        resolved,
         deps_type=TriageDeps,
         output_type=TriageVerdict,
         instructions=INSTRUCTIONS,
         retries=settings.retries,
-        model_settings=AnthropicModelSettings(
-            max_tokens=settings.max_tokens,
-            # Adaptive thinking: the model decides how much to think.
-            anthropic_thinking={"type": "adaptive"},
-            anthropic_effort=effort or settings.effort,
-        ),
+        model_settings=model_settings_for(resolved, effort or settings.effort),
     )
 
     @agent.instructions
@@ -496,8 +557,9 @@ def build_agent(
             "period": {"start": start.isoformat(), "end": window.start.isoformat()},
             "total_events": total,
             "note": "No activity at all in this period." if total == 0 else None,
-            "first_seen": aggs["first_seen"]["value_as_string"],
-            "last_seen": aggs["last_seen"]["value_as_string"],
+            # `min`/`max` over an empty result set carry no `value_as_string` at all.
+            "first_seen": aggs["first_seen"].get("value_as_string"),
+            "last_seen": aggs["last_seen"].get("value_as_string"),
             "outcomes": terms("outcomes"),
             "source_ips": terms("source_ips"),
             "countries": terms("countries"),
