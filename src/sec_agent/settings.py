@@ -48,6 +48,12 @@ class Settings(BaseSettings):
 
     retries: int = 2
 
+    compaction: str | None = None
+    """Name of the compaction profile to run under; `None` uses the config's default."""
+
+    compaction_config: str | None = None
+    """Path to the profiles file; `None` looks for `compaction.toml` in the working directory."""
+
     def api_key_for(self, model: str | None = None) -> tuple[str | None, str | None]:
         """Return `(env var name, key)` for the provider a model belongs to.
 

@@ -8,13 +8,13 @@ import json
 import sys
 from pathlib import Path
 
+import logfire
 from pydantic import ValidationError
 
 from .agent import Alert, TriageDeps, TriageVerdict, build_agent
+from .compaction import resolve_profile
 from .settings import settings
 from .trace import run_traced
-
-import logfire
 
 VERDICT_LABEL = {
     "true_positive": "TRUE POSITIVE",
@@ -56,6 +56,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         choices=["low", "medium", "high", "xhigh", "max"],
         help=f"Reasoning depth (default: {settings.effort})",
+    )
+    parser.add_argument(
+        "--compaction",
+        default=None,
+        metavar="PROFILE",
+        help="Message-history compaction profile from compaction.toml (default: its own).",
+    )
+    parser.add_argument(
+        "--compaction-config",
+        default=None,
+        metavar="PATH",
+        help="Read compaction profiles from this file instead of ./compaction.toml.",
     )
     parser.add_argument(
         "--trace",
@@ -117,7 +129,7 @@ def _render(verdict: TriageVerdict) -> str:
 async def _run(args: argparse.Namespace, alert: Alert) -> TriageVerdict:
     logfire.configure()
     logfire.instrument_pydantic_ai()
-    agent = build_agent(model=args.model, effort=args.effort)
+    agent = build_agent(model=args.model, effort=args.effort, compaction=args.profile)
     deps = TriageDeps(alert=alert)
     if args.es_url:
         deps.es_url = args.es_url
@@ -146,6 +158,17 @@ def main(argv: list[str] | None = None) -> int:
     variable, key = settings.api_key_for(args.model)
     if variable and not key:
         print(f"Error: {variable} is not set (put it in .env).", file=sys.stderr)
+        return 2
+
+    # Resolve the compaction profile before spending anything, so an unknown
+    # name or a malformed strategy fails as an argument error rather than mid-run.
+    try:
+        args.profile = resolve_profile(
+            args.compaction or settings.compaction,
+            args.compaction_config or settings.compaction_config,
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
         return 2
 
     try:

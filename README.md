@@ -251,10 +251,12 @@ else to Pydantic AI's unified `thinking` level, which OpenRouter forwards as
 | `--effort` | `low` \| `medium` \| `high` \| `xhigh` \| `max` |
 | `--es-url` | Point the tools at a different Elasticsearch cluster |
 | `--index` | Add an index to the tools' allowlist (repeatable) |
+| `--compaction` | Message-history compaction profile, by name (see §8) |
+| `--compaction-config` | Read profiles from a file other than `./compaction.toml` |
 
 Environment equivalents (`.env` or the shell): `SEC_AGENT_MODEL`,
 `SEC_AGENT_EFFORT`, `SEC_AGENT_MAX_TOKENS`, `SEC_AGENT_RETRIES`,
-`SEC_AGENT_ES_URL`.
+`SEC_AGENT_ES_URL`, `SEC_AGENT_COMPACTION`, `SEC_AGENT_COMPACTION_CONFIG`.
 
 Exit codes: `0` verdict printed, `1` runtime failure (e.g. Elasticsearch
 unreachable), `2` bad arguments or a missing key, `130` interrupted.
@@ -327,8 +329,11 @@ produce that shape, it fails loudly rather than returning prose.
 | `src/sec_agent/settings.py` | Environment/`.env` config, and which key each provider needs |
 | `src/sec_agent/agent.py` | Alert/verdict schemas, model wiring, dependencies, tools, instructions |
 | `src/sec_agent/compact.py` | Lossless folding of repetitive tool results before the model sees them |
+| `src/sec_agent/compaction.py` | Message-history compaction profiles, read from `compaction.toml` |
 | `src/sec_agent/cli.py` | The `sec-agent` command line interface |
+| `src/sec_agent/bench.py` | The `sec-agent-bench` harness that prices the profiles |
 | `src/sec_agent/trace.py` | The `--trace` renderer over Pydantic AI's event stream |
+| `compaction.toml` | The compaction profiles themselves |
 | `siem/docker-compose.yml` | Dev-only Elasticsearch + Kibana, security disabled |
 | `siem/generator.py` | Synthetic log generator and the answer key |
 | `siem/make_alerts.py` | Ground truth → the alerts a detector would have raised |
@@ -337,7 +342,162 @@ produce that shape, it fails loudly rather than returning prose.
 
 ---
 
-## 8. Troubleshooting
+## 8. Compaction profiles
+
+Section 7 covered the *tool-result* fold: `search_events` states shared fields
+once, so a result costs ~1,000 tokens instead of ~10,700. That happens before a
+result ever enters the conversation and is always on.
+
+A second, independent mechanism operates on the conversation itself. Even folded
+results accumulate — every prior tool call and its result is resent on every
+subsequent request — and Pydantic AI's harness ships
+[compaction strategies](https://pydantic.dev/docs/ai/harness/compaction/) that
+rewrite that history just before each request goes out. They are configured, not
+coded, in **`compaction.toml`**:
+
+```toml
+default_profile = "none"
+
+[profiles.none]
+description = "No history compaction. The full transcript is resent every request."
+strategies = []
+
+[profiles.clear_tool_results]
+description = "Blank the content of older tool results, keeping the last 2 pairs."
+
+  [[profiles.clear_tool_results.strategies]]
+  type = "ClearToolResults"
+  max_tokens = 20_000
+  keep_pairs = 2
+```
+
+A profile is a named list of strategies. Each entry's `type` names a harness
+class and the remaining keys are handed to its constructor verbatim, so a
+strategy gains a new option without any code change here. `tiers` and
+`fallback_chain` nest, so `TieredCompaction` is expressed directly:
+
+```toml
+[[profiles.tiered.strategies]]
+type = "TieredCompaction"
+target_tokens = 20_000
+
+  [[profiles.tiered.strategies.tiers]]
+  type = "ClearToolResults"
+  max_tokens = 1
+  keep_pairs = 2
+
+  [[profiles.tiered.strategies.tiers]]
+  type = "SummarizingCompaction"
+  max_messages = 1
+  keep_messages = 8
+```
+
+The seven profiles shipped:
+
+| Profile | Cost | What it does |
+| --- | --- | --- |
+| `none` | — | Baseline: the full transcript is resent every request |
+| `clear_tool_results` | zero-LLM | Blanks the content of older tool results, keeping the last 2 pairs |
+| `sliding_window` | zero-LLM | Drops the oldest whole messages down to a tail of 8 |
+| `deduplicate` | zero-LLM | Blanks any tool result superseded by an identical later call |
+| `clamp` | zero-LLM | Head/tail-truncates a single oversized part |
+| `summarize` | one LLM call | Compresses older messages into a structured summary |
+| `tiered` | escalates | Clamp, then clear, and summarize only if still over budget |
+
+Pick one per run:
+
+```bash
+uv run sec-agent siem/alerts/S1_brute_force.json --compaction tiered
+SEC_AGENT_COMPACTION=clear_tool_results uv run sec-agent siem/alerts/S1_brute_force.json
+```
+
+`deduplicate` is worth a note. `DeduplicateFileReads` is written for an agent
+that re-reads files, and this one has none — but it does re-run queries, so the
+config points its `file_key` at a named resolver that keys on the tool name plus
+its normalised arguments. The same `search_events` twice, verbatim, then keeps
+only the newer copy of the answer.
+
+**The thresholds in `compaction.toml` are deliberately aggressive.** A triage run
+is six or seven requests and tens of thousands of tokens, not the hundreds of
+thousands these strategies ship defaults for. At default settings none of them
+would ever fire on this corpus and the benchmark would measure nothing. They are
+tuned to trigger, not to be run in production — scale them up, or switch to
+`max_fraction`, once you know what your histories really look like.
+
+---
+
+## 9. What is compaction actually worth: `sec-agent-bench`
+
+Compaction is not free in either direction. Clearing an old tool result saves
+the tokens it occupied on every later request, but a model that can no longer
+see the document it was about may go and fetch it again. Summarizing saves more
+and costs a whole model call to do it. Whether either is a win is an empirical
+question about *this* agent on *this* corpus.
+
+`sec-agent-bench` runs every alert under every profile and measures three things
+at once:
+
+```bash
+uv run sec-agent-bench                                  # all profiles, all alerts
+uv run sec-agent-bench --profile none --profile tiered  # just two
+uv run sec-agent-bench --repeat 3 --out results.json    # average, and keep the raw records
+```
+
+```
+profile                    in     out    total    Δtok   $/alert      Δ$  peak ctx  reqs    sec   checks   cited
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+*none                  48,213   5,104   53,317       —   0.00280       —    21,904   7.0   41.2     48/48     100
+ clear_tool_results    31,880   4,970   36,850     -31   0.00201     -28    12,110   7.2   38.7     46/48      92
+ …
+```
+
+- **spend** — `in`/`out`/`total` tokens and the dollar cost of them, priced
+  through [`genai-prices`](https://github.com/pydantic/genai-prices). The
+  summarizing strategy folds its own model call into the run's usage, so an
+  LLM-backed profile is billed for the summary it wrote.
+- **pressure** — `peak ctx`, the largest estimated history sent during a run,
+  measured with harness's own `ReportContextUsage` registered *after* the
+  profile so it reads the compacted history. This is what compaction targets;
+  total tokens is what it costs.
+- **fidelity** — `checks` and `cited`, below.
+
+### The fidelity checks
+
+This is the column that matters. A profile that halves the cost and starts
+returning `inconclusive`, or stops citing documents, has not made triage cheaper
+— it has stopped doing triage. Eight checks run against the `TriageVerdict`
+structure and `siem/ground_truth.json`:
+
+| Check | Fails when |
+| --- | --- |
+| `alert_id` | The verdict does not say which alert it is about |
+| `decided` | It returned `inconclusive` — every scenario in the corpus really happened |
+| `positive` | It called planted activity a `false_positive` |
+| `user_in_scope` | The scenario's account is missing from `scope.users` |
+| `ip_in_scope` | The scenario's source address is missing from `scope.source_ips` |
+| `timeline` | The timeline is empty |
+| `grounded` | A timeline step cites no document id |
+| `queries_recorded` | No queries were recorded |
+
+`grounded` is the one compaction breaks first, and the reason it is worth
+measuring at all: blank the tool result that carried a document id and the model
+can still *describe* what happened — it just can no longer prove it, which is
+the exact failure `INSTRUCTIONS` exists to prevent. A profile that saves 40% and
+drops `cited` from 100% to 60% has traded auditability for tokens, and the table
+shows you the trade instead of hiding it.
+
+`benign_true_positive` deliberately passes `positive`: whether an off-hours admin
+login from a corporate range is legitimate is a judgement the agent is allowed
+to make. These are structural consistency checks, not a semantic grade — no
+model is ever asked to grade another model's prose.
+
+Runs that fail outright, and every individual fidelity failure, are listed under
+the table with the profile and alert that produced them. `--out` writes the full
+per-run records — including the per-request context readings — as JSON.
+
+---
+
+## 10. Troubleshooting
 
 **`Elasticsearch at http://localhost:9200 is unreachable`**
 The lab is not up. `cd siem && docker compose up -d`, then wait for
@@ -362,7 +522,7 @@ switch `SEC_AGENT_MODEL` to a provider you do have a key for.
 
 ---
 
-## 9. Development
+## 11. Development
 
 ```bash
 uv run pytest        # tests (no API key needed — FunctionModel, no network)

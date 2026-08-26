@@ -1,0 +1,110 @@
+# Message-history compaction profiles.
+#
+# Each profile is one way of keeping a triage run's *conversation history* under
+# control, and `sec-agent-bench` runs the alerts under each of them to price the
+# difference. These are Pydantic AI harness capabilities, which rewrite the
+# history just before each request goes out:
+# https://pydantic.dev/docs/ai/harness/compaction/
+#
+# This is a separate mechanism from the tool-result folding in
+# `src/sec_agent/compact.py`, which is always on. That fold happens *before* a
+# result enters the history and is lossless; these strategies operate on the
+# history that has already been folded. The question the benchmark answers is
+# how much history compaction is still worth paying for on top of it.
+#
+# Every entry in `strategies` is a table whose `type` names a harness class; the
+# remaining keys are passed to that class's constructor verbatim, so a strategy
+# gains a new option without any code change here.
+#
+# NOTE ON THRESHOLDS. A triage run is short — six or seven model requests and
+# tens of thousands of tokens, not the hundreds of thousands these strategies
+# ship defaults for. The triggers below are deliberately aggressive so that
+# compaction actually *fires* within a run and the benchmark measures something.
+# They are not the numbers to run in production; scale them up (or switch to
+# `max_fraction`) once you know what your histories really look like.
+
+default_profile = "none"
+
+
+# --- Baseline ----------------------------------------------------------------
+
+[profiles.none]
+description = "No history compaction. The full transcript is resent every request."
+strategies = []
+
+
+# --- Zero-LLM strategies -----------------------------------------------------
+
+[profiles.clear_tool_results]
+description = "Blank the content of older tool results, keeping the last 2 call/return pairs."
+
+  [[profiles.clear_tool_results.strategies]]
+  type = "ClearToolResults"
+  max_tokens = 20_000
+  keep_pairs = 2
+  clear_tool_inputs = false
+  placeholder = "[tool result cleared — re-run the query if you still need it]"
+
+[profiles.sliding_window]
+description = "Discard the oldest whole messages once the history passes 20k tokens."
+
+  [[profiles.sliding_window.strategies]]
+  type = "SlidingWindowCompaction"
+  max_tokens = 20_000
+  keep_messages = 8
+  preserve_first_user_message = true
+
+[profiles.deduplicate]
+description = "Blank every tool result superseded by an identical later call."
+
+  [[profiles.deduplicate.strategies]]
+  type = "DeduplicateFileReads"
+  file_key = "tool_call"           # named resolver, see src/sec_agent/compaction.py
+  placeholder = "[superseded — this exact query was run again later]"
+
+[profiles.clamp]
+description = "Head/tail-truncate any single oversized part."
+
+  [[profiles.clamp.strategies]]
+  type = "ClampOversizedMessages"
+  max_part_tokens = 2_000
+  keep_head_chars = 1_500
+  keep_tail_chars = 1_500
+  clamp_tool_call_args = true
+
+
+# --- LLM-backed strategies ---------------------------------------------------
+
+[profiles.summarize]
+description = "Summarize older messages with a second model call once past 20k tokens."
+
+  [[profiles.summarize.strategies]]
+  type = "SummarizingCompaction"
+  max_tokens = 20_000
+  keep_messages = 8
+  incremental = true
+  keep_user_messages = true
+  # `model` is omitted on purpose: the summary is written by the run's own
+  # model, so the benchmark prices one model rather than two. Set it to e.g.
+  # "anthropic:claude-sonnet-5" to price a cheap summarizer behind a costly run.
+
+[profiles.tiered]
+description = "Escalating: clamp, then clear tool results, and summarize only if still over budget."
+
+  [[profiles.tiered.strategies]]
+  type = "TieredCompaction"
+  target_tokens = 20_000
+
+    [[profiles.tiered.strategies.tiers]]
+    type = "ClampOversizedMessages"
+    max_part_tokens = 4_000
+
+    [[profiles.tiered.strategies.tiers]]
+    type = "ClearToolResults"
+    max_tokens = 1
+    keep_pairs = 2
+
+    [[profiles.tiered.strategies.tiers]]
+    type = "SummarizingCompaction"
+    max_messages = 1
+    keep_messages = 8

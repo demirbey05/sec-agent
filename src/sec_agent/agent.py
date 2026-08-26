@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -9,10 +10,12 @@ from typing import Any, Literal
 import requests
 from pydantic import AwareDatetime, BaseModel, Field, IPvAnyAddress, model_validator
 from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 
 from .compact import cap_histogram, fold_events
+from .compaction import CompactionProfile, resolve_profile
 from .settings import provider_of, settings
 
 Severity = Literal["info", "low", "medium", "high", "critical"]
@@ -362,9 +365,25 @@ def build_agent(
     *,
     model: str | Model | None = None,
     effort: str | None = None,
+    compaction: str | CompactionProfile | None = None,
+    extra_capabilities: Sequence[AbstractCapability[TriageDeps]] = (),
 ) -> Agent[TriageDeps, TriageVerdict]:
-    """Build the triage agent and register its tools."""
+    """Build the triage agent and register its tools.
+
+    Args:
+        model: `provider:model`, or an already-built model. Defaults to `SEC_AGENT_MODEL`.
+        effort: Reasoning depth. Defaults to `SEC_AGENT_EFFORT`.
+        compaction: Message-history compaction profile, by name or already resolved.
+            Defaults to `SEC_AGENT_COMPACTION`, then to the config's own default.
+        extra_capabilities: Registered after the profile's, so an observer such as
+            `ReportContextUsage` sees the history the profile leaves behind.
+    """
     resolved = model if isinstance(model, Model) else resolve_model(model or settings.model)
+    profile = (
+        compaction
+        if isinstance(compaction, CompactionProfile)
+        else resolve_profile(compaction or settings.compaction, settings.compaction_config)
+    )
     agent = Agent(
         resolved,
         deps_type=TriageDeps,
@@ -372,6 +391,7 @@ def build_agent(
         instructions=INSTRUCTIONS,
         retries=settings.retries,
         model_settings=model_settings_for(resolved, effort or settings.effort),
+        capabilities=[*profile.capabilities(), *extra_capabilities],
     )
 
     @agent.instructions

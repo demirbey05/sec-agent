@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "pydantic-ai-harness>=0.25.0",
     "pydantic-ai-slim[anthropic,logfire,openai]>=2.33.0",
     "pydantic-settings>=2.15.0",
     "requests>=2.34.2",
@@ -15,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 sec-agent = "sec_agent.cli:main"
+sec-agent-bench = "sec_agent.bench:main"
 
 [dependency-groups]
 dev = [
