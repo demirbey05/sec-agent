@@ -372,6 +372,7 @@ def build_agent(
         instructions=INSTRUCTIONS,
         retries=settings.retries,
         model_settings=model_settings_for(resolved, effort or settings.effort),
+        name="sec-agent",
     )
 
     @agent.instructions
