@@ -12,6 +12,7 @@ from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 
+from .compact import cap_histogram, fold_events
 from .settings import provider_of, settings
 
 Severity = Literal["info", "low", "medium", "high", "critical"]
@@ -196,13 +197,27 @@ class TriageDeps:
 
     max_hits: int = 50
     max_buckets: int = 50
+    max_time_slots: int = 120
+    """Total date-histogram slots returned, shared out across the groups asked for.
+
+    A seven-day hourly breakdown over ten groups is some 1,700 mostly-idle slots.
+    The budget is deliberately tight: a histogram is for reading the *shape* of
+    activity, and a model that needs more resolution than this should narrow the
+    window or coarsen the interval rather than page through idle buckets.
+    """
+
     timeout_seconds: float = 30.0
 
-    source_excludes: tuple[str, ...] = ("labels.scenario",)
-    """Fields stripped from every result.
+    source_excludes: tuple[str, ...] = ("labels.scenario", "event.id", "source.port")
+    """Fields Elasticsearch is told never to return.
 
     `labels.scenario` is the lab's answer key; letting the model read it would
     turn every evaluation into a tautology.
+
+    `event.id` and `source.port` are per-document noise: both differ on every
+    single event, so they survive every attempt to fold a result set down while
+    telling a triage analyst nothing — `_id` already identifies a document, and
+    an ephemeral client port has no bearing on whether a login was legitimate.
     """
 
     def index_for(self, index: str | None) -> str:
@@ -386,8 +401,14 @@ def build_agent(
         end: str | None = None,
         size: int = 20,
         newest_first: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Fetch raw authentication events, newest or oldest first.
+    ) -> dict[str, Any]:
+        """Fetch authentication events, newest or oldest first.
+
+        Results are folded: fields shared by the matching documents are stated
+        once under `shape`, and any document departing from them is listed in
+        `outliers` with the fields it departs on. Read `legend` before the data.
+        Nothing is dropped, so a lone success among failures shows up in
+        `outliers` rather than being lost among them.
 
         Args:
             filters: Exact-match field/value pairs, e.g. `{"user.name": "kadmin"}`.
@@ -408,7 +429,11 @@ def build_agent(
             "track_total_hits": True,
         }
         response = deps.search(body)
-        return [{"_id": hit["_id"], **hit["_source"]} for hit in response["hits"]["hits"]]
+        return fold_events(
+            [{"_id": hit["_id"], **hit["_source"]} for hit in response["hits"]["hits"]],
+            timestamp_field=timestamp_field,
+            total_matched=response["hits"]["total"]["value"],
+        )
 
     @agent.tool
     def aggregate_events(
@@ -461,16 +486,26 @@ def build_agent(
         }
         response = deps.search(body)
 
+        grouped = response["aggregations"]["grouped"]["buckets"]
+        # Share the slot budget out, but never leave a group too thin to read.
+        slot_budget = max(8, deps.max_time_slots // max(len(grouped), 1))
+
         buckets = []
-        for bucket in response["aggregations"]["grouped"]["buckets"]:
+        for bucket in grouped:
             entry: dict[str, Any] = {"key": bucket["key"], "count": bucket["doc_count"]}
             if distinct_field:
                 entry[f"distinct_{distinct_field}"] = bucket["distinct"]["value"]
             if interval:
-                entry["over_time"] = [
-                    {"at": slot["key_as_string"], "count": slot["doc_count"]}
-                    for slot in bucket["over_time"]["buckets"]
-                ]
+                slots, note = cap_histogram(
+                    [
+                        {"at": slot["key_as_string"], "count": slot["doc_count"]}
+                        for slot in bucket["over_time"]["buckets"]
+                    ],
+                    slot_budget,
+                )
+                entry["over_time"] = slots
+                if note:
+                    entry["over_time_note"] = note
             buckets.append(entry)
 
         return {

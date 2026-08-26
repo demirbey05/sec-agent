@@ -65,14 +65,46 @@ def _format_args(args: str | dict[str, Any] | None) -> str:
     return _clip(", ".join(parts))
 
 
+def _folded_preview(content: dict[str, Any]) -> list[str]:
+    """Render a folded `search_events` result for a human reading the trace.
+
+    The shared shape is collapsed to a single line: it is the least interesting
+    part of the result by construction. The outliers are printed in full, since
+    a document that broke the pattern is usually why the query was run.
+    """
+    counts = [f"returned {content['returned']} of {content['total_matched']}"]
+    if conforming := content.get("events"):
+        counts.append(f"{len(conforming)} conforming")
+    if outliers := content.get("outlier_count"):
+        counts.append(f"{outliers} outlier{'s' if outliers != 1 else ''}")
+
+    lines = [" · ".join(counts)]
+    if content.get("note"):
+        lines.append(content["note"])
+    if shape := content.get("shape"):
+        lines.append(f"shape: {json.dumps(shape, default=str)}")
+    if conforming:
+        first, last = conforming[0], conforming[-1]
+        lines.append(f"events: {first[1]} … {last[1]}  [{first[0]} … {last[0]}]")
+    for outlier in content.get("outliers", []):
+        lines.append(f"outlier: {json.dumps(outlier, default=str)}")
+    if truncated := content.get("truncated"):
+        lines.append(truncated)
+    return lines
+
+
 def _preview(content: Any) -> list[str]:
     """Summarise a tool result: a headline, then one line per record."""
     if isinstance(content, list):
         head = [f"{len(content)} document{'s' if len(content) != 1 else ''}"]
         body = [json.dumps(item, default=str) for item in content]
     elif isinstance(content, dict):
-        head = []
-        body = json.dumps(content, indent=2, default=str).splitlines()
+        if "returned" in content and "total_matched" in content:
+            head = []
+            body = _folded_preview(content)
+        else:
+            head = []
+            body = json.dumps(content, indent=2, default=str).splitlines()
     else:
         head = []
         body = str(content).splitlines()

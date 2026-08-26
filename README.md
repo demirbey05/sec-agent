@@ -163,8 +163,14 @@ what happened immediately after the window closed…
     }
 
 ● search_events(filters={"user.name": "mehmet.kaya"}, size=20, newest_first=true)
-  ⎿ 20 documents
-     {"_id": "agXSOKAB…", "message": "login_success for user mehmet.kaya from 185.220.101.44", …}
+  ⎿ {
+      "returned": 20,
+      "total_matched": 215,
+      "shape": {"event.outcome": "failure", "source.ip": "185.220.101.44", …},
+      "events": [["IQXSOKAB…", "2026-08-23T02:16:59.310Z"], …],
+      "outliers": [{"_id": "IgXSOKAB…", "@timestamp": "2026-08-23T02:17:04.900Z",
+                    "event.outcome": "success"}]
+    }
      … +12 more lines
 
 ─── 7 model requests · 48213 in / 5104 out tokens ───
@@ -265,6 +271,49 @@ The agent has three tools, all confined to `TriageDeps.allowed_indices`:
 | `aggregate_events` | "How many, grouped by what" — with optional cardinality and a time histogram |
 | `entity_baseline` | "Is this unusual *for them*?" — one entity's normal profile before the alert |
 
+### Folded results
+
+Authentication logs repeat themselves. In a password-guessing burst, twenty-two
+of a login event's twenty-six fields are identical across every document, so
+returning fifty of them in full costs about 10,000 tokens to restate the same
+facts fifty times — and buries the one document that *differs*.
+
+`search_events` therefore folds its results (`src/sec_agent/compact.py`): the
+shared fields are stated once under `shape`, and any document departing from
+them is listed in `outliers` with only the fields it departs on.
+
+```
+● search_events(filters={"user.name": "mehmet.kaya"}, size=50, newest_first=true)
+  ⎿ returned 50 of 215 · 49 conforming · 1 outlier
+     shape:    {"event.outcome": "failure", "event.reason": "invalid_password",
+                "source.ip": "185.220.101.44", "user_agent.name": "python-requests", …}
+     events:   [["IQXSOKAB…", "02:16:59.310"], ["IAXSOKAB…", "02:16:58.121"], …]
+     outliers: [{"_id": "IgXSOKAB…", "@timestamp": "02:17:04.900",
+                 "event.outcome": "success", "event.reason": "<absent>"}]
+```
+
+That is ~1,000 tokens instead of ~10,700, and the successful login five seconds
+past the alert window — the whole answer to S1 — is now the one thing that
+stands out rather than the needle in the haystack.
+
+The fold is **lossless and deterministic**: `shape` plus each document's
+deviations reconstructs the originals byte-for-byte, and no second model is
+involved. A summarising LLM here would be cheaper to write and strictly worse —
+it would make every verdict rest on an unverified paraphrase, which is the
+failure mode `INSTRUCTIONS` exists to prevent, and the lone outlier is exactly
+what a summariser rounds away.
+
+Two fields are dropped outright at the Elasticsearch level, alongside the
+`labels.scenario` answer key: `event.id` (a random UUID; `_id` already
+identifies the document) and `source.port` (an ephemeral client port). Both
+differ on every event, so they defeat folding while telling a triage analyst
+nothing.
+
+Date histograms are capped at `TriageDeps.max_time_slots` (120 slots, shared
+across the groups requested), keeping the busiest slots in chronological order
+and saying so — a seven-day hourly breakdown over ten groups is otherwise ~1,700
+mostly-idle buckets.
+
 Output is validated against the `TriageVerdict` schema: a verdict
 (`true_positive`, `benign_true_positive`, `false_positive`, `inconclusive`), the
 agent's own severity and confidence, a timeline citing document ids, every
@@ -277,6 +326,7 @@ produce that shape, it fails loudly rather than returning prose.
 | --- | --- |
 | `src/sec_agent/settings.py` | Environment/`.env` config, and which key each provider needs |
 | `src/sec_agent/agent.py` | Alert/verdict schemas, model wiring, dependencies, tools, instructions |
+| `src/sec_agent/compact.py` | Lossless folding of repetitive tool results before the model sees them |
 | `src/sec_agent/cli.py` | The `sec-agent` command line interface |
 | `src/sec_agent/trace.py` | The `--trace` renderer over Pydantic AI's event stream |
 | `siem/docker-compose.yml` | Dev-only Elasticsearch + Kibana, security disabled |
