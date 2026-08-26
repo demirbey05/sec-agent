@@ -14,6 +14,8 @@ from .agent import Alert, TriageDeps, TriageVerdict, build_agent
 from .settings import settings
 from .trace import run_traced
 
+import logfire
+
 VERDICT_LABEL = {
     "true_positive": "TRUE POSITIVE",
     "benign_true_positive": "BENIGN TRUE POSITIVE",
@@ -113,6 +115,8 @@ def _render(verdict: TriageVerdict) -> str:
 
 
 async def _run(args: argparse.Namespace, alert: Alert) -> TriageVerdict:
+    logfire.configure()
+    logfire.instrument_pydantic_ai()
     agent = build_agent(model=args.model, effort=args.effort)
     deps = TriageDeps(alert=alert)
     if args.es_url:
