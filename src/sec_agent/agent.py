@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -13,6 +14,7 @@ from pydantic_ai.models import Model, infer_model
 from pydantic_ai.settings import ModelSettings
 
 from .compact import cap_histogram, fold_events
+from .context import ContextUsage, capabilities
 from .settings import provider_of, settings
 
 Severity = Literal["info", "low", "medium", "high", "critical"]
@@ -362,8 +364,20 @@ def build_agent(
     *,
     model: str | Model | None = None,
     effort: str | None = None,
+    compaction: str | None = None,
+    on_usage: Callable[[ContextUsage], None] | None = None,
 ) -> Agent[TriageDeps, TriageVerdict]:
-    """Build the triage agent and register its tools."""
+    """Build the triage agent and register its tools.
+
+    Args:
+        model: Model to run, as `provider:model` or an already-built `Model`.
+        effort: Reasoning depth, in this agent's vocabulary rather than a provider's.
+        compaction: History-compaction technique to run, overriding
+            `settings.compaction`. See `sec_agent.context.COMPACTION_TECHNIQUES`.
+        on_usage: Called with a context-usage reading before each request, for a
+            live gauge. Passing it registers `ReportContextUsage`, which reports
+            whether or not a compaction technique is running.
+    """
     resolved = model if isinstance(model, Model) else resolve_model(model or settings.model)
     agent = Agent(
         resolved,
@@ -372,6 +386,7 @@ def build_agent(
         instructions=INSTRUCTIONS,
         retries=settings.retries,
         model_settings=model_settings_for(resolved, effort or settings.effort),
+        capabilities=capabilities(technique=compaction, on_usage=on_usage),
         name="sec-agent",
     )
 

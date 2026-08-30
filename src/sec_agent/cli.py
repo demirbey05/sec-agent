@@ -8,13 +8,13 @@ import json
 import sys
 from pathlib import Path
 
+import logfire
 from pydantic import ValidationError
 
 from .agent import Alert, TriageDeps, TriageVerdict, build_agent
+from .context import COMPACTION_TECHNIQUES, pinned_notes
 from .settings import settings
-from .trace import run_traced
-
-import logfire
+from .trace import gauge, run_traced
 
 VERDICT_LABEL = {
     "true_positive": "TRUE POSITIVE",
@@ -56,6 +56,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         choices=["low", "medium", "high", "xhigh", "max"],
         help=f"Reasoning depth (default: {settings.effort})",
+    )
+    parser.add_argument(
+        "--compaction",
+        default=None,
+        choices=[*sorted(COMPACTION_TECHNIQUES), "none"],
+        help=(
+            "How to keep the history inside the context window "
+            f"(default: {settings.compaction})"
+        ),
+    )
+    parser.add_argument(
+        "--pin",
+        action="append",
+        default=None,
+        dest="pins",
+        metavar="NOTE",
+        help="Standing direction no compaction may discard. Repeatable.",
     )
     parser.add_argument(
         "--trace",
@@ -117,15 +134,25 @@ def _render(verdict: TriageVerdict) -> str:
 async def _run(args: argparse.Namespace, alert: Alert) -> TriageVerdict:
     logfire.configure()
     logfire.instrument_pydantic_ai()
-    agent = build_agent(model=args.model, effort=args.effort)
+    agent = build_agent(
+        model=args.model,
+        effort=args.effort,
+        compaction=args.compaction,
+        # The gauge only earns its line when someone is watching the run.
+        on_usage=gauge if args.trace else None,
+    )
     deps = TriageDeps(alert=alert)
     if args.es_url:
         deps.es_url = args.es_url
     if args.indices:
         deps.allowed_indices = tuple({*deps.allowed_indices, *args.indices})
+
+    history = pinned_notes(args.pins or [])
     if args.trace:
-        return await run_traced(agent, deps)
-    result = await agent.run(f"Triage alert {alert.alert_id}.", deps=deps)
+        return await run_traced(agent, deps, history=history)
+    result = await agent.run(
+        f"Triage alert {alert.alert_id}.", deps=deps, message_history=history
+    )
     return result.output
 
 

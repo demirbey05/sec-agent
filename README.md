@@ -249,12 +249,15 @@ else to Pydantic AI's unified `thinking` level, which OpenRouter forwards as
 | `--json` | Print the verdict as JSON instead of the human rendering |
 | `--model` | Model for this run, as `provider:model` |
 | `--effort` | `low` \| `medium` \| `high` \| `xhigh` \| `max` |
+| `--compaction` | How to keep the history in the context window (default `none`, see §7) |
+| `--pin` | Standing direction no compaction may discard (repeatable) |
 | `--es-url` | Point the tools at a different Elasticsearch cluster |
 | `--index` | Add an index to the tools' allowlist (repeatable) |
 
 Environment equivalents (`.env` or the shell): `SEC_AGENT_MODEL`,
 `SEC_AGENT_EFFORT`, `SEC_AGENT_MAX_TOKENS`, `SEC_AGENT_RETRIES`,
-`SEC_AGENT_ES_URL`.
+`SEC_AGENT_ES_URL`, `SEC_AGENT_COMPACTION`, `SEC_AGENT_CONTEXT_FRACTION`,
+`SEC_AGENT_CONTEXT_WINDOW`.
 
 Exit codes: `0` verdict printed, `1` runtime failure (e.g. Elasticsearch
 unreachable), `2` bad arguments or a missing key, `130` interrupted.
@@ -314,6 +317,69 @@ across the groups requested), keeping the busiest slots in chronological order
 and saying so — a seven-day hourly breakdown over ten groups is otherwise ~1,700
 mostly-idle buckets.
 
+### Compacting the history
+
+Folding shrinks each result on its way in. Compaction is the second line of
+defence, for when the accumulated results stop fitting anyway — a long
+investigation, or a chain of alerts on one history. It is **off by default**:
+folded results keep a single-alert triage well inside a modern window, and every
+technique costs something, since rewriting history invalidates the provider's
+prompt cache and a summary spends a model call.
+
+`src/sec_agent/context.py` builds all eight techniques from
+[`pydantic-ai-harness`](https://pydantic.dev/docs/ai/harness/compaction/);
+`--compaction` picks the one that runs.
+
+| `--compaction` | Cost | What it does |
+| --- | --- | --- |
+| `none` | — | Default. No history management at all |
+| `clamp` | zero-LLM | Head/tail-truncates one runaway message part, in place |
+| `dedupe` | zero-LLM | Blanks a query result superseded by an identical later query |
+| `clear-tools` | zero-LLM | Blanks older tool results, keeping the last 3 pairs |
+| `sliding` | zero-LLM | Drops the oldest messages, keeping a recent tail |
+| `summarize` | 1 model call | Replaces older messages with a structured summary |
+| `fallback` | depends | Summarizes; drops messages instead if that call fails |
+| `tiered` | escalates | All of the above, cheapest first, summary only if still over |
+| `warn` | zero-LLM | Edits nothing; warns the model so it wraps up on its own |
+
+`tiered` is the one to reach for. It runs the deterministic passes first and
+only pays for a summary if they were not enough — and if that call fails, it
+degrades to a sliding window instead of ending the run:
+
+```bash
+uv run sec-agent siem/alerts/S1_brute_force.json --compaction tiered --trace
+```
+
+Three choices here are specific to triage rather than inherited defaults:
+
+- **Deduplication is exact, not heuristic.** All three tools are read-only
+  queries over an index that does not move mid-run, so two calls with the same
+  arguments have the same result and the older one is pure restatement. That is
+  what makes `DeduplicateFileReads` — which ships no default key, because
+  guessing one risks dropping live data — safe to key on `tool_name` + arguments.
+- **`entity_baseline` results are never cleared.** A baseline is the reference
+  every later judgement is measured against, and it is the cheapest result the
+  agent produces. Clearing it saves almost nothing and costs the comparison.
+- **Summarization is last, and its prompt is rewritten.** The default harness
+  prompt summarizes a coding session. This one preserves what a verdict is
+  challenged on — document `_id`s, measured counts, which queries already ran —
+  because a summary that rounds away an `_id` makes it uncitable forever. This
+  is the same objection as folding: a verdict resting on a paraphrase is the
+  failure mode `INSTRUCTIONS` exists to prevent, which is exactly why the cheap
+  lossless tiers run first.
+
+`--trace` adds a context gauge (`context 34% · 68,204 / 200,000 tokens`) before
+each request, saying so when the window is an estimate rather than the model's
+real one.
+
+`--pin` seeds the run with a note that no technique may discard — the one piece
+of context that must survive verbatim three compactions into a long run:
+
+```bash
+uv run sec-agent siem/alerts/S2_password_spray.json --compaction tiered \
+  --pin "185.220.101.44 is a known scanner; I care about the successful logins."
+```
+
 Output is validated against the `TriageVerdict` schema: a verdict
 (`true_positive`, `benign_true_positive`, `false_positive`, `inconclusive`), the
 agent's own severity and confidence, a timeline citing document ids, every
@@ -327,6 +393,7 @@ produce that shape, it fails loudly rather than returning prose.
 | `src/sec_agent/settings.py` | Environment/`.env` config, and which key each provider needs |
 | `src/sec_agent/agent.py` | Alert/verdict schemas, model wiring, dependencies, tools, instructions |
 | `src/sec_agent/compact.py` | Lossless folding of repetitive tool results before the model sees them |
+| `src/sec_agent/context.py` | Compaction of the history itself, once folded results still don't fit |
 | `src/sec_agent/cli.py` | The `sec-agent` command line interface |
 | `src/sec_agent/trace.py` | The `--trace` renderer over Pydantic AI's event stream |
 | `siem/docker-compose.yml` | Dev-only Elasticsearch + Kibana, security disabled |

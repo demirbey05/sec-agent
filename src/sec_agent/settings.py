@@ -48,6 +48,34 @@ class Settings(BaseSettings):
 
     retries: int = 2
 
+    compaction: str = "none"
+    """How the agent keeps its history inside the context window.
+
+    `none` by default: a single-alert triage rarely fills a modern window once
+    `compact.py` has folded the tool results, and every technique costs
+    something — a rewritten history busts the prompt cache, a summary spends a
+    model call. Turn one on for long or repeated investigations.
+
+    One of the technique names in `sec_agent.context.COMPACTION_TECHNIQUES`, or
+    `none`. Each technique's own tuning lives with the technique, not here: it
+    follows from what these tools return, not from how a run is deployed.
+    """
+
+    context_fraction: float = 0.75
+    """Fraction of the context window the chosen technique acts at.
+
+    A fraction rather than a token count, so the same setting is right on every
+    model: 150k tokens on a 200k window, 750k on a 1M one.
+    """
+
+    context_window: int | None = None
+    """Override the resolved context window.
+
+    Only needed when the price registry has the model wrong, or does not know it
+    at all — a local endpoint, or a proxied deployment reporting someone else's
+    model id.
+    """
+
     def api_key_for(self, model: str | None = None) -> tuple[str | None, str | None]:
         """Return `(env var name, key)` for the provider a model belongs to.
 

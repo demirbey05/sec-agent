@@ -15,6 +15,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
+    ModelMessage,
     PartDeltaEvent,
     PartStartEvent,
     RetryPromptPart,
@@ -25,6 +26,7 @@ from pydantic_ai.messages import (
 )
 
 from .agent import TriageDeps, TriageVerdict
+from .context import ContextUsage
 
 BOLD = "1"
 DIM = "2"
@@ -176,15 +178,33 @@ class Tracer:
         self._close()
 
 
+def gauge(usage: ContextUsage) -> None:
+    """Print how full the context is, before each request goes out.
+
+    `resolved` is false when the window is the harness's conservative fallback
+    rather than the model's real one, which makes the percentage a guess — worth
+    saying, since it is the number a decision to compact rests on.
+    """
+    estimate = "" if usage.resolved else " (window estimated)"
+    print(
+        _paint(
+            f"  context {usage.fraction:.0%} · "
+            f"{usage.used_tokens:,} / {usage.window_tokens:,} tokens{estimate}",
+            DIM,
+        )
+    )
+
+
 async def run_traced(
     agent: Agent[TriageDeps, TriageVerdict],
     deps: TriageDeps,
+    history: list[ModelMessage] | None = None,
 ) -> TriageVerdict:
     """Run the agent, printing every step, and return the final verdict."""
     tracer = Tracer()
     prompt = f"Triage alert {deps.alert.alert_id}."
 
-    async with agent.run_stream_events(prompt, deps=deps) as events:
+    async with agent.run_stream_events(prompt, deps=deps, message_history=history) as events:
         async for event in events:
             tracer.handle(event)
         tracer.finish()
